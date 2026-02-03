@@ -1,0 +1,14 @@
+# Core ML
+scikit-learn
+pandas
+numpy
+
+# MLflow (tracking + model loading)
+mlflow
+
+# API
+fastapi
+uvicorn
+
+# Optional but recommended
+python-multipart
