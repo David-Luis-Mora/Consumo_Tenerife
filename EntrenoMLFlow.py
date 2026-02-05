@@ -1,29 +1,34 @@
 import mlflow
 import mlflow.sklearn
+import pandas as pd
+from sklearn.pipeline import Pipeline
 
 from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, confusion_matrix
-
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingRegressor
+import numpy as np
 
 # Cojo datos y los divido para entrenar.
-data = load_breast_cancer(as_frame=True)
+data = pd.read_csv('consumo-energetico-2025.csv')
 
-columnas_entrada = ["mean radius",
-"mean texture",
-"mean perimeter",
-"mean area",
-"mean smoothness"
-]
+data['fecha'] = pd.to_datetime(data['fecha'])
 
-X, y = data.frame[columnas_entrada], data.target
+features = ['dia', 'mes','cups_municipio', 'cups_distribuidor']
+data['dia'] = data['fecha'].dt.day
+data['mes'] = data['fecha'].dt.month
+data['consumo_log'] = np.log1p(data['consumo'])
+data.drop(columns=['fecha'],inplace=True)
+
+X = data[features]
+y = data['consumo_log']
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y,
     test_size=0.2,
     random_state=42,
-    stratify=y
+    # stratify=y
 )
 
 # Aquí establezco los parámetros de MLFlow.
@@ -34,10 +39,19 @@ mlflow.set_experiment("Cáncer mama - Árbol de decisión")
 max_depths = [None, 2]
 min_splits = [2, 5]
 
+model_n_estimators =  [50, 100],
+model_max_depth = [None, 10, 20],
+model_min_samples_split = [2, 5]
+
+gb_pipeline = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('model', GradientBoostingRegressor(random_state=42))
+])
+
 # Ahora simulo un poco lo que hace dicha clase.
 # Lanzo todas las combinaciones...
-for max_depth in max_depths:
-    for min_samples_split in min_splits:
+for max_depth in model_n_estimators:
+    for min_samples_split in model_min_samples_split:
 
                 # ... y las logueo.
                 run_name = (
@@ -48,11 +62,12 @@ for max_depth in max_depths:
                 # Iniciamos experimento
                 with mlflow.start_run(run_name=run_name):
 
-                    model = DecisionTreeClassifier(
-                        max_depth=max_depth,
-                        min_samples_split=min_samples_split,
-                        random_state=42
-                    )
+                    model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=max_depth,
+                    min_samples_split=min_samples_split,
+                    random_state=42
+                )
 
                     model.fit(X_train, y_train)
 

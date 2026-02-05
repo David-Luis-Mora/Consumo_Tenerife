@@ -1,53 +1,38 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 import joblib
 import numpy as np
+import pandas as pd
 
-app = FastAPI(
-    title="API Consumo Energético Canarias",
-    description="Predicción de consumo energético diario",
-    version="1.0"
-)
+app = FastAPI()
 
 # Cargar modelo
-try:
-    model = joblib.load("random_forest_model.pkl")
-except:
-    model = None
+model = joblib.load("model/model.pkl")
 
-# ---------- Pydantic ----------
+# ===== Schema entrada =====
 class InputData(BaseModel):
     dia: int
     mes: int
-    dia_semana: int
-    fin_de_semana: int
-    cups_municipio: int
-    cups_distribuidor: int
+    cups_municipio: str
+    cups_distribuidor: str
 
-# ---------- Health ----------
+# ===== Health check =====
 @app.get("/health")
 def health():
-    if model is None:
+    try:
+        return {"status": "ok"}
+    except:
         return {"status": "ko"}
-    return {"status": "ok"}
 
-# ---------- Predict ----------
+# ===== Predicción =====
 @app.post("/predict")
 def predict(data: InputData):
-    if model is None:
-        raise HTTPException(status_code=500, detail="Modelo no cargado")
 
-    features = np.array([[
-        data.dia,
-        data.mes,
-        data.dia_semana,
-        data.fin_de_semana,
-        data.cups_municipio,
-        data.cups_distribuidor
-    ]])
+    df = pd.DataFrame([data.dict()])
 
-    prediction = model.predict(features)
+    pred_log = model.predict(df)[0]
+    pred_real = np.expm1(pred_log)
 
     return {
-        "prediccion_consumo": float(prediction[0])
+        "prediccion_kWh": float(pred_real)
     }
