@@ -1,0 +1,249 @@
+TAREA 1 – Carga del grafo de transporte
+Cargar nodos (lugares)
+
+
+
+
+
+WITH "https://github.com/neo4j-graph-analytics/book/raw/master/data/transport-nodes.csv" AS uri
+LOAD CSV WITH HEADERS FROM uri AS row
+MERGE (place:Place {id: row.id})
+SET place.latitude   = toFloat(row.latitude),
+    place.longitude  = toFloat(row.longitude),
+    place.population = toInteger(row.population);
+
+Cargar relaciones (carreteras)
+
+
+
+WITH "https://github.com/neo4j-graph-analytics/book/raw/master/data/transport-relationships.csv" AS uri
+LOAD CSV WITH HEADERS FROM uri AS row
+MATCH (origin:Place {id: row.src})
+MATCH (destination:Place {id: row.dst})
+MERGE (origin)-[:ROAD {distance: toInteger(row.cost)}]->(destination);
+
+
+Proyectar el grafo para GDS
+
+CALL gds.graph.project(
+  'myGraph',
+  'Place',
+  {
+    ROAD: {
+      properties: 'distance'
+    }
+  }
+);
+
+
+TAREA 1 – Algoritmo de Dijkstra (todos los caminos)
+
+
+MATCH (source:Place {id: 'Doncaster'})
+CALL gds.allShortestPaths.dijkstra.stream(
+  'myGraph',
+  {
+    sourceNode: source,
+    relationshipWeightProperty: 'distance'
+  }
+)
+YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs, path
+RETURN
+  index,
+  gds.util.asNode(sourceNode).id AS sourceNodeName,
+  gds.util.asNode(targetNode).id AS targetNodeName,
+  totalCost,
+  [nodeId IN nodeIds | gds.util.asNode(nodeId).id] AS nodeNames,
+  costs,
+  nodes(path) AS path
+ORDER BY index;
+
+
+
+TAREA 1 – Dijkstra (origen → destino)
+
+MATCH (source:Place {id: 'Felixstowe'}), (target:Place {id: 'Utrecht'})
+CALL gds.shortestPath.dijkstra.stream(
+  'myGraph',
+  {
+    sourceNode: source,
+    targetNode: target,
+    relationshipWeightProperty: 'distance'
+  }
+)
+YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs, path
+RETURN
+  index,
+  gds.util.asNode(sourceNode).id AS sourceNodeName,
+  gds.util.asNode(targetNode).id AS targetNodeName,
+  totalCost,
+  [nodeId IN nodeIds | gds.util.asNode(nodeId).id] AS nodeNames,
+  costs,
+  nodes(path) AS path
+ORDER BY index;
+
+
+
+TAREA 1 – A* (A-Star)
+
+CALL gds.graph.project(
+  'myGraph2',
+  'Place',
+  {
+    ROAD: {
+      properties: 'distance'
+    }
+  }
+);
+
+
+Ejecución A*
+
+
+MATCH (source:Place {id: 'Felixstowe'}), (target:Place {id: 'Utrecht'})
+CALL gds.shortestPath.astar.stream(
+  'myGraph2',
+  {
+    sourceNode: source,
+    targetNode: target,
+    latitudeProperty: 'latitude',
+    longitudeProperty: 'longitude',
+    relationshipWeightProperty: 'distance'
+  }
+)
+YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs, path
+RETURN
+  index,
+  gds.util.asNode(sourceNode).id AS sourceNodeName,
+  gds.util.asNode(targetNode).id AS targetNodeName,
+  totalCost,
+  [nodeId IN nodeIds | gds.util.asNode(nodeId).id] AS nodeNames,
+  costs,
+  nodes(path) AS path;
+
+
+TAREA 2 / 3 – Grafo de dependencias de librerías
+Cargar nodos (librerías)
+
+WITH "https://github.com/neo4j-graph-analytics/book/raw/master/data/sw-nodes.csv" AS uri
+LOAD CSV WITH HEADERS FROM uri AS row
+MERGE (:Lib {id: row.id});
+
+Cargar relaciones
+
+WITH "https://github.com/neo4j-graph-analytics/book/raw/master/data/sw-relationships.csv" AS uri
+LOAD CSV WITH HEADERS FROM uri AS row
+MATCH (source:Lib {id: row.src})
+MATCH (destination:Lib {id: row.dst})
+MERGE (source)-[:DEPENDS_ON]->(destination);
+
+
+Proyectar grafo
+
+CALL gds.graph.project(
+  'myGraphLib',
+  'Lib',
+  {
+    DEPENDS_ON: {
+      orientation: 'REVERSE'
+    }
+  }
+);
+
+
+Centralidad (Closeness)
+
+CALL gds.beta.closeness.stream('myGraphLib')
+YIELD nodeId, score
+RETURN gds.util.asNode(nodeId).id AS library, score
+ORDER BY score DESC;
+
+
+TAREA 3 – Métricas de centralidad y comunidades (Librerías)
+Betweenness Centrality
+
+CALL gds.betweenness.stream('myGraphLib')
+YIELD nodeId, score
+RETURN gds.util.asNode(nodeId).id AS library, score
+ORDER BY score DESC;
+
+Proyección no dirigida (para triángulos y clustering)
+
+CALL gds.graph.project(
+  'myGraphLib2',
+  'Lib',
+  {
+    DEPENDS_ON: {
+      orientation: 'UNDIRECTED'
+    }
+  }
+);
+
+
+Conteo de triángulos
+
+CALL gds.triangleCount.stream('myGraphLib2')
+YIELD nodeId, triangleCount
+RETURN gds.util.asNode(nodeId).id AS library, triangleCount
+ORDER BY triangleCount DESC;
+
+
+
+Coeficiente local de clustering
+
+CALL gds.localClusteringCoefficient.stream('myGraphLib2')
+YIELD nodeId, localClusteringCoefficient
+RETURN
+  gds.util.asNode(nodeId).id AS library,
+  localClusteringCoefficient
+ORDER BY localClusteringCoefficient DESC;
+
+
+Componentes conexas (WCC)
+
+CALL gds.wcc.stream('myGraphLib2')
+YIELD nodeId, componentId
+RETURN
+  componentId,
+  collect(gds.util.asNode(nodeId).id) AS libraries,
+  count(*) AS size
+ORDER BY size DESC;
+
+
+TAREA 4 – Predicción de enlaces (Ciudades)
+Vecinos comunes (Common Neighbors)
+
+MATCH (a:Place {id: 'Den Haag'})-[:ROAD]-(common:Place),
+      (b:Place {id: 'Utrecht'})-[:ROAD]-(common)
+RETURN
+  a.id AS city1,
+  b.id AS city2,
+  collect(common.id) AS commonNeighbors,
+  count(common) AS numberOfCommonNeighbors;
+
+
+Preferential Attachment
+
+
+MATCH (a:Place {id: 'Den Haag'})-[:ROAD]-()
+WITH a, count(*) AS degreeA
+MATCH (b:Place {id: 'Utrecht'})-[:ROAD]-()
+WITH a, degreeA, b, count(*) AS degreeB
+RETURN
+  a.id AS city1,
+  b.id AS city2,
+  degreeA,
+  degreeB,
+  degreeA * degreeB AS preferentialAttachment;
+
+
+Resource Allocation
+
+
+MATCH (a:Place {id: 'Den Haag'})-[:ROAD]-(common:Place),
+      (b:Place {id: 'Utrecht'})-[:ROAD]-(common)
+WITH a, b, common, count(*) AS commonDegree
+RETURN
+  a.id AS city1,
+  b.id AS city2,
+  sum(1.0 / commonDegree) AS resourceAllocation;
