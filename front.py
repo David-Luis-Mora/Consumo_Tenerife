@@ -1,7 +1,7 @@
 import gradio as gr
 import requests
 
-URL = "https://TU_API_RENDER/predict"
+URL = "http://127.0.0.1:8000/predict"
 
 def consumir_api(dia, mes, municipio, distribuidora):
 
@@ -11,8 +11,9 @@ def consumir_api(dia, mes, municipio, distribuidora):
         "cups_municipio": municipio,
         "cups_distribuidor": distribuidora
     }
-
     r = requests.post(URL, json=payload)
+    if r.status_code != 200:
+        return f"Error de la API: {r.text}" # Esto te dirá el error real
     return r.json()["prediccion_kWh"]
 
 iface = gr.Interface(
